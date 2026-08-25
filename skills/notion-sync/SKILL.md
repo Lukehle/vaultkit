@@ -58,6 +58,11 @@ Everything is dry-run until `--apply`. What the engine guarantees (test-pinned):
 | Decision records | Notes with secrets — run `vault-lint` first; it errors on key patterns |
 | | Personal/private notes; volatile data dumps (link the system of record instead) |
 
+Notion **databases** are out of the mirror's scope (pages only — property mapping is
+where sync tools go to die). When a database view matters to the vault, snapshot it:
+export the view as a markdown table into a normal synced page on a cadence, clearly
+stamped as-of. The database stays the live surface; the vault gets an auditable copy.
+
 **The outbound gate is a security control, not just tidiness.** A vault that (a) an
 agent writes to, (b) ingests untrusted web content, and (c) syncs outward is the
 textbook exfiltration shape — the "lethal trifecta." Sync only promoted, human-reviewed
