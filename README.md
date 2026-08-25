@@ -58,10 +58,12 @@ Node ≥ 18.
 
 **2 tested scripts** (`scripts/`, zero dependencies, Node ≥ 18):
 
-- `notion-sync/` — the two-way mirror engine. 32 tests pin the safety behaviors:
+- `notion-sync/` — the two-way mirror engine. 33 tests pin the safety behaviors:
   normalized hashing (no phantom changes from CRLF), conflict hard-stops, read-back
   verification, frontmatter-only edits never push, fresh links start in conflict on
-  purpose. Design rationale in [docs/NOTION-SYNC.md](docs/NOTION-SYNC.md).
+  purpose, and an editor save landing mid-pull aborts rather than being overwritten.
+  Poll-based, one sync process per vault — no watcher, no daemon, by design.
+  Design rationale in [docs/NOTION-SYNC.md](docs/NOTION-SYNC.md).
 - `vault-lint/` — deterministic health checks (secrets, broken wikilinks, orphans,
   stale, oversized, missing frontmatter/index). 12 tests. Read-only, CI-friendly exit
   codes.

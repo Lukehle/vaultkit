@@ -47,6 +47,19 @@ cache over the markdown, never the truth**. This has a practical edge: when an i
 disagrees with a note, the note wins, and the index gets rebuilt. Never patch the index
 to match a conclusion.
 
+## Measured limits of structure-only retrieval
+
+The numbers in `docs/EVIDENCE.md` cut both ways and belong here: on a real ~2,350-note
+vault, keyword recall@10 was 100% — but **paraphrase recall@10 was 77%**, and
+non-English recall@5 was 13% until a multilingual embedding model lifted it to 63%.
+Translation: roughly one in four questions phrased differently from the notes' own
+words will come back "not in the vault" when it is. Treat a failed lookup on a
+paraphrased question as *unproven absence*: retry with the vault's own vocabulary
+(check the index and MOC headings for the terms the notes actually use). A local
+hybrid search index (BM25 + small embeddings) is a **legitimate optional layer** for
+vaults where this bites — it stays a rebuildable cache over the markdown, never the
+truth, exactly like every other index.
+
 ## What this skill does NOT claim
 
 Community posts advertise specific savings ("94% reduction", "71x fewer tokens").

@@ -80,7 +80,8 @@ area, linking to domain MOCs, which link to notes. Three hops maximum from index
 note. The index is a **disposable cache over the markdown, never the truth**: if it
 burns down, the notes rebuild it. That is also the answer to "why not a vector DB" —
 plain files are the source of truth; any index (this file, search, embeddings) must be
-rebuildable from them.
+rebuildable from them. Structure-only retrieval has measured limits on paraphrased
+questions — see `vault-retrieval` for the numbers and the optional hybrid-index layer.
 
 ## Obsidian-app-native layer (optional)
 

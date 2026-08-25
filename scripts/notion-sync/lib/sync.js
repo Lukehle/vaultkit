@@ -163,7 +163,16 @@ async function pullNote(config, client, relPath, { force = null } = {}) {
   const markdown = remote.markdown === null ? await client.getPageMarkdown(entry.pageId) : remote.markdown;
   const { nameById } = idMaps(ledger);
   const { body, warnings } = fromNotion(markdown, nameById);
-  const { frontmatterText } = fm.split(original);
+
+  // Re-read-and-rehash guard: the network round-trips above are a window in
+  // which an editor save (Obsidian autosave, a human mid-keystroke) can land.
+  // Writing over it would be silent data loss — the one failure the hash
+  // ledger cannot see, because it happens between our read and our write.
+  const current = fs.readFileSync(absPath, 'utf8');
+  if (hash(fm.split(current).body) !== currentLocalHash) {
+    return { relPath, action: 'conflict', reason: 'file changed on disk during the pull (editor save mid-sync); nothing written — re-run' };
+  }
+  const { frontmatterText } = fm.split(current);
   const next = frontmatterText === null ? body : `---\n${frontmatterText}\n---\n${body}`;
   fs.writeFileSync(absPath, next, 'utf8');
 
@@ -204,7 +213,17 @@ async function createAndLink(config, client, relPath) {
   });
   ledgerLib.save(config.ledgerPath, ledger);
 
-  let next = fm.set(original, 'notion_page_id', page.id);
+  // Same re-read guard as pullNote: page creation is several network calls,
+  // and the frontmatter write must not clobber an edit that landed meanwhile.
+  // The ledger (authoritative) already holds the link either way.
+  const current = fs.readFileSync(absPath, 'utf8');
+  if (current !== original) {
+    return {
+      relPath, action: 'conflict', pageId: page.id,
+      reason: 'file changed on disk during page creation; frontmatter left untouched — the ledger holds the link, and status will reconcile on the next run',
+    };
+  }
+  let next = fm.set(current, 'notion_page_id', page.id);
   next = fm.set(next, 'notion_url', notionPageUrl(page.id));
   fs.writeFileSync(absPath, next, 'utf8');
   return { relPath, action: 'created', pageId: page.id, warnings };

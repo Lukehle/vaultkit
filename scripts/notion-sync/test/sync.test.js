@@ -207,3 +207,28 @@ test('status: skips the markdown fetch when last_edited_time is unchanged', asyn
   assert.equal(rows[0].state, 'in-sync');
   assert.equal(markdownFetches, 0, 'unchanged last_edited_time must not burn a markdown fetch');
 });
+
+// Regression guard for the pull-write TOCTOU window: an editor save landing
+// during the pull's network round-trip must abort the write, not lose the edit.
+test('pull: a file edit landing mid-pull aborts as conflict, nothing written', async () => {
+  const root = makeVault();
+  const notePath = path.join(root, 'projects/alpha.md');
+  writeNote(root, 'projects/alpha.md', '---\ntags: [keep]\n---\nOld local body\n');
+  const notion = fakeNotion({ p1: { markdown: 'New remote body\n', lastEditedTime: 't1' } });
+  // The fake's metadata fetch simulates the human saving during the round-trip.
+  const sneaky = {
+    ...notion,
+    async retrievePage(id) {
+      fs.writeFileSync(notePath, '---\ntags: [keep]\n---\nEdit that landed mid-sync\n', 'utf8');
+      return notion.retrievePage(id);
+    },
+  };
+  const config = seedLedger(root, 'projects/alpha.md', {
+    pageId: 'p1', lastLocalHash: hash('Old local body\n'), lastRemoteHash: hash('stale'), lastRemoteEditedTime: 't0',
+  });
+
+  const result = await sync.pullNote(config, sneaky, 'projects/alpha.md');
+  assert.equal(result.action, 'conflict');
+  assert.match(result.reason, /changed on disk during/);
+  assert.match(fs.readFileSync(notePath, 'utf8'), /Edit that landed mid-sync/, 'the human edit must survive');
+});

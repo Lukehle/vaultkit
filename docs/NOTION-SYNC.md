@@ -61,6 +61,12 @@ should be run off-hours.
 
 ## Known limitations (deliberate)
 
+- **One sync process per vault.** The ledger and the re-read guards protect against an *editor*
+  racing the sync; they do not make two concurrent sync processes safe against each other. Run
+  syncs from one scheduler, serially.
+- **No file watcher.** The engine reads the disk fresh on every invocation and is poll-based by
+  design — a background watcher daemon would break the zero-dependency, locked-seat contract and
+  adds nothing an invocation-driven reader doesn't already get.
 - **No webhooks.** Push-based Notion→vault would need a public HTTPS receiver; this tool
   targets locked-down machines. Polling `status` on a schedule is the design. (Webhook
   payloads are signal-only, unordered, at-most-once anyway — a poll-with-hash-check is
