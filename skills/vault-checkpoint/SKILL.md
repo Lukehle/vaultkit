@@ -1,6 +1,6 @@
 ---
 name: vault-checkpoint
-description: Survive context loss during long work - externalize state to a checkpoint note before it can evaporate, detect that a compaction or session break already happened, and recover from disk instead of from a summary. Use before any long loop over many items, before ending a session mid-task, and immediately when you cannot recall a specific figure or decision you clearly established earlier. Trigger on "where was I", "did I already do", "resume", "continue where we left off", "long session", "compact".
+description: Survive context loss during long work - externalize state to a checkpoint note before it can evaporate, detect that a compaction or session break already happened, and recover from disk instead of from a summary. Use before any long loop over many items, before ending a session mid-task, and immediately when you cannot recall a specific figure or decision you clearly established earlier. Trigger on "where was I", "did I already do", "resume", "continue where we left off", "survive compaction", "checkpoint this".
 ---
 
 # Vault checkpoint
