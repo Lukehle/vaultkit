@@ -9,7 +9,7 @@ $ARGUMENTS
 Run the **vault-health** skill against the vault named in the arguments (default:
 current directory).
 
-1. `node scripts/vault-lint/cli.js --vault <vault> --json` — check the exit code
+1. `node ~/.claude/vaultkit/scripts/vault-lint/cli.js --vault <vault> --json` — check the exit code
    itself, never a filtered echo of the output.
 2. Report errors first (secrets, broken wikilinks) with the specific fix for each;
    secrets found in notes also mean: rotate the credential, then remove it.

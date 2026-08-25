@@ -7,6 +7,7 @@
 //   node cli.js init                 [--vault <dir>]
 //   node cli.js link <note> <pageId> [--vault <dir>]
 //   node cli.js status               [--vault <dir>]
+//   node cli.js reconcile [note ...] [--vault <dir>] [--apply]
 //   node cli.js push  [note ...]     [--vault <dir>] [--apply] [--new] [--emit <outDir>]
 //   node cli.js pull  [note ...]     [--vault <dir>] [--apply]
 //   node cli.js resolve <note> (--take-local | --take-remote) [--vault <dir>] [--apply]
@@ -44,31 +45,49 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const command = args._[0];
   const vaultRoot = path.resolve(args.flags.vault || process.cwd());
+  const apply = Boolean(args.flags.apply);
 
   if (!command || command === 'help') return usage();
 
   if (command === 'init') {
     const configPath = path.join(vaultRoot, 'vaultkit.sync.json');
     if (fs.existsSync(configPath)) return console.log(`already exists: ${configPath}`);
+    if (!apply) {
+      console.log(`dry-run: would write ${configPath}. Pass --apply.`);
+      return;
+    }
     fs.writeFileSync(configPath, `${JSON.stringify(CONFIG_TEMPLATE, null, 2)}\n`, 'utf8');
     console.log(`wrote ${configPath} — edit syncRoots and parentPageId, then: status`);
     return;
   }
 
   const config = sync.loadConfig(vaultRoot);
-  const apply = Boolean(args.flags.apply);
 
   if (command === 'link') {
     const [, relPath, pageId] = args._;
     if (!relPath || !pageId) throw new Error('usage: link <note.md> <notionPageId>');
+    const resolved = sync.resolveNote(config, relPath);
+    if (!fs.existsSync(resolved.absPath)) throw new Error(`note not found: ${resolved.relPath}`);
+    if (!apply) {
+      console.log(`dry-run: would link ${resolved.relPath} <-> ${pageId}. Pass --apply.`);
+      return;
+    }
     let ledger = ledgerLib.load(config.ledgerPath);
-    ledger = ledgerLib.withEntry(ledger, relPath, { pageId });
+    ledger = ledgerLib.withEntry(ledger, resolved.relPath, { pageId });
     ledgerLib.save(config.ledgerPath, ledger);
-    const absPath = path.join(vaultRoot, relPath);
-    fs.writeFileSync(absPath, fm.set(fs.readFileSync(absPath, 'utf8'), 'notion_page_id', pageId), 'utf8');
-    console.log(`linked ${relPath} <-> ${pageId}`);
+    let next = fm.set(fs.readFileSync(resolved.absPath, 'utf8'), 'notion_page_id', pageId);
+    next = fm.set(next, 'notion_url', `https://www.notion.so/${pageId.replace(/-/g, '')}`);
+    fs.writeFileSync(resolved.absPath, next, 'utf8');
+    console.log(`linked ${resolved.relPath} <-> ${pageId}`);
     console.log('note: a fresh link has no sync baseline, so it reports as a conflict until you');
     console.log('pick a side once:  resolve <note> --take-local  or  --take-remote');
+    return;
+  }
+
+  if (command === 'reconcile') {
+    const results = sync.reconcileLinks(config, { apply, notes: args._.slice(1) });
+    if (!apply) console.log('dry-run (pass --apply to repair frontmatter from the ledger):');
+    results.forEach(report);
     return;
   }
 
@@ -89,7 +108,9 @@ async function main() {
 
   if (command === 'status') {
     const rows = await sync.status(config, client);
-    for (const row of rows) console.log(`${row.state.padEnd(13)} ${row.relPath}`);
+    for (const row of rows) {
+      console.log(`${row.state.padEnd(19)} ${row.relPath}${row.linkIssue ? `  ! ${row.linkIssue}` : ''}`);
+    }
     const conflicts = rows.filter((r) => r.state === 'conflict');
     if (conflicts.length) {
       console.log(`\n${conflicts.length} conflict(s). Resolve each explicitly:`);
@@ -105,7 +126,7 @@ async function main() {
     const wanted = command === 'push' ? ['push-pending'] : ['pull-pending'];
     let targets = rows.filter((r) => wanted.includes(r.state)).map((r) => r.relPath);
     if (command === 'push' && args.flags.new) {
-      targets = targets.concat(rows.filter((r) => r.state === 'unlinked').map((r) => r.relPath));
+      targets = targets.concat(rows.filter((r) => ['unlinked', 'creation-pending'].includes(r.state)).map((r) => r.relPath));
     }
     if (named.length) targets = targets.filter((t) => named.includes(t));
 
@@ -117,7 +138,7 @@ async function main() {
     }
     for (const relPath of targets) {
       const state = rows.find((r) => r.relPath === relPath).state;
-      const result = state === 'unlinked'
+      const result = ['unlinked', 'creation-pending'].includes(state)
         ? await sync.createAndLink(config, client, relPath)
         : command === 'push'
           ? await sync.pushNote(config, client, relPath)
@@ -152,7 +173,7 @@ function report(result) {
 }
 
 function usage() {
-  console.log('vaultkit notion-sync — commands: init | link | status | push | pull | resolve');
+  console.log('vaultkit notion-sync — commands: init | link | status | reconcile | push | pull | resolve');
   console.log('Dry-run by default; every mutation requires --apply. See scripts/notion-sync/README.md');
 }
 

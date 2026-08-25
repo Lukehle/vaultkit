@@ -232,3 +232,75 @@ test('pull: a file edit landing mid-pull aborts as conflict, nothing written', a
   assert.match(result.reason, /changed on disk during/);
   assert.match(fs.readFileSync(notePath, 'utf8'), /Edit that landed mid-sync/, 'the human edit must survive');
 });
+
+test('config: traversal and protected sync roots fail closed', () => {
+  const root = makeVault();
+  for (const syncRoot of ['../outside', 'sources', '_drafts', 'projects/../sources', '.']) {
+    fs.writeFileSync(
+      path.join(root, 'vaultkit.sync.json'),
+      JSON.stringify({ syncRoots: [syncRoot] }),
+      'utf8',
+    );
+    assert.throws(() => sync.loadConfig(root), /unsafe syncRoot/);
+  }
+});
+
+test('status: ledger entries outside syncRoots stay visible but cannot sync', async () => {
+  const root = makeVault();
+  fs.mkdirSync(path.join(root, 'private'));
+  writeNote(root, 'private/hidden.md', 'Private\n');
+  const config = seedLedger(root, 'private/hidden.md', { pageId: 'p-private' });
+  const rows = await sync.status(config, {});
+  assert.equal(rows.find((row) => row.relPath === 'private/hidden.md').state, 'out-of-scope');
+  assert.throws(() => sync.resolveNote(config, 'private/hidden.md'), /outside configured syncRoots/);
+});
+
+test('status reports ledger/frontmatter drift and reconcile repairs from the ledger', async () => {
+  const root = makeVault();
+  writeNote(root, 'projects/alpha.md', 'Body\n');
+  const notion = fakeNotion({ p1: { markdown: 'Body\n', lastEditedTime: 't0' } });
+  const config = seedLedger(root, 'projects/alpha.md', {
+    pageId: 'p1', lastLocalHash: hash('Body\n'), lastRemoteHash: hash('Body\n'), lastRemoteEditedTime: 't0',
+  });
+
+  const rows = await sync.status(config, notion);
+  assert.match(rows[0].linkIssue, /frontmatter notion_page_id=\(missing\)/);
+  assert.equal(sync.reconcileLinks(config)[0].action, 'would-reconcile');
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'projects/alpha.md'), 'utf8'), /notion_page_id/);
+
+  assert.equal(sync.reconcileLinks(config, { apply: true })[0].action, 'reconciled');
+  const repaired = fs.readFileSync(path.join(root, 'projects/alpha.md'), 'utf8');
+  assert.match(repaired, /notion_page_id: p1/);
+  assert.match(repaired, /notion_url: https:\/\/www\.notion\.so\/p1/);
+});
+
+test('createAndLink: a failed body PATCH resumes the persisted page instead of duplicating', async () => {
+  const root = makeVault();
+  writeNote(root, 'projects/beta.md', 'Brand new note\n');
+  const notion = fakeNotion();
+  let failPatch = true;
+  const flaky = {
+    ...notion,
+    async patchPageMarkdown(pageId, markdown) {
+      if (failPatch) {
+        failPatch = false;
+        throw new Error('simulated PATCH failure after POST');
+      }
+      return notion.patchPageMarkdown(pageId, markdown);
+    },
+  };
+  const config = sync.loadConfig(root);
+
+  await assert.rejects(() => sync.createAndLink(config, flaky, 'projects/beta.md'), /simulated PATCH failure/);
+  let ledger = ledgerLib.load(config.ledgerPath);
+  assert.equal(ledger.notes['projects/beta.md'].creationPending, true);
+  assert.equal(Object.keys(notion.pages).length, 1);
+  const pendingRows = await sync.status(config, flaky);
+  assert.equal(pendingRows[0].state, 'creation-pending');
+
+  const result = await sync.createAndLink(config, flaky, 'projects/beta.md');
+  assert.equal(result.action, 'created');
+  assert.equal(Object.keys(notion.pages).length, 1, 'retry must reuse the page id saved after POST');
+  ledger = ledgerLib.load(config.ledgerPath);
+  assert.equal(ledger.notes['projects/beta.md'].creationPending, false);
+});

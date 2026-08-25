@@ -58,14 +58,14 @@ Node ≥ 18.
 
 **2 tested scripts** (`scripts/`, zero dependencies, Node ≥ 18):
 
-- `notion-sync/` — the two-way mirror engine. 33 tests pin the safety behaviors:
+- `notion-sync/` — the two-way mirror engine. 38 tests pin the safety behaviors:
   normalized hashing (no phantom changes from CRLF), conflict hard-stops, read-back
   verification, frontmatter-only edits never push, fresh links start in conflict on
   purpose, and an editor save landing mid-pull aborts rather than being overwritten.
   Poll-based, one sync process per vault — no watcher, no daemon, by design.
   Design rationale in [docs/NOTION-SYNC.md](docs/NOTION-SYNC.md).
 - `vault-lint/` — deterministic health checks (secrets, broken wikilinks, orphans,
-  stale, oversized, missing frontmatter/index). 12 tests. Read-only, CI-friendly exit
+  stale, oversized, missing frontmatter/index). 13 tests. Read-only, CI-friendly exit
   codes.
 
 **3 commands** (`commands/`): `/vault-init`, `/vault-health`, `/vault-sync`.
@@ -81,6 +81,7 @@ maintenance to automate) with vaultkit's default and the dissent both stated.
 ```bash
 # As a Claude Code plugin
 /plugin marketplace add Lukehle/vaultkit
+/plugin install vaultkit
 
 # Or copy the tree (no network, no package manager)
 ./install.sh          # or install.ps1 on Windows
@@ -89,18 +90,23 @@ maintenance to automate) with vaultkit's default and the dissent both stated.
 /vault-init ~/vault
 
 # Health check
-node scripts/vault-lint/cli.js --vault ~/vault
+node ~/.claude/vaultkit/scripts/vault-lint/cli.js --vault ~/vault
 
 # Notion mirror (token in .env as NOTION_TOKEN; dry-run by default)
-node scripts/notion-sync/cli.js init   --vault ~/vault
-node scripts/notion-sync/cli.js status --vault ~/vault
-node scripts/notion-sync/cli.js push   --vault ~/vault --apply
+node ~/.claude/vaultkit/scripts/notion-sync/cli.js init   --vault ~/vault --apply
+node ~/.claude/vaultkit/scripts/notion-sync/cli.js status --vault ~/vault
+node ~/.claude/vaultkit/scripts/notion-sync/cli.js push   --vault ~/vault --apply
 ```
+
+The copy-tree installer includes those runtime scripts. It tracks owned files in
+`.vaultkit-install-ledger.json`, backs up every replacement, safely prunes only
+unchanged retired files, and supports `--rollback latest` through the installed
+`~/.claude/vaultkit/scripts/managed-install.mjs`.
 
 Run the tests:
 
 ```bash
-node --test scripts/notion-sync/test/unit.test.js scripts/notion-sync/test/sync.test.js
+node --test scripts/notion-sync/test/unit.test.js scripts/notion-sync/test/sync.test.js scripts/notion-sync/test/cli.test.js
 node --test scripts/vault-lint/test/lint.test.js
 ```
 

@@ -17,8 +17,8 @@ current directory).
 3. Copy `templates/VAULT.md` and `templates/INDEX.md` from the vault-blueprint skill,
    filled in for this vault. Keep VAULT.md under ~500 tokens — cut, don't add.
 4. If the vault should mirror to Notion, run `notion-sync` setup
-   (`scripts/notion-sync/cli.js init`) and put the chosen folder in `syncRoots`.
+   (`~/.claude/vaultkit/scripts/notion-sync/cli.js init --apply`) and put the chosen folder in `syncRoots`.
 5. If the vault is under git (recommended: it is the audit trail), commit the scaffold
    as its own commit.
-6. Finish by running the health lint (`scripts/vault-lint/cli.js --vault <vault>`) so
+6. Finish by running the health lint (`~/.claude/vaultkit/scripts/vault-lint/cli.js --vault <vault>`) so
    the baseline is clean, and report what was created.

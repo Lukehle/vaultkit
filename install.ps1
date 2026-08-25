@@ -1,5 +1,5 @@
-# vaultkit installer - copies skills and commands into a Claude Code config dir.
-# No network, no package manager. Usage:
+# vaultkit managed installer. Copies skills, commands, and runtime scripts while
+# preserving a hash ledger and rollback point. No network or package manager.
 #   .\install.ps1            # installs to $HOME\.claude
 #   .\install.ps1 C:\proj    # installs to C:\proj\.claude
 param([string]$TargetRoot = $HOME)
@@ -8,20 +8,12 @@ $ErrorActionPreference = 'Stop'
 $Src = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Target = Join-Path $TargetRoot '.claude'
 
-New-Item -ItemType Directory -Force (Join-Path $Target 'skills') | Out-Null
-New-Item -ItemType Directory -Force (Join-Path $Target 'commands') | Out-Null
-
-Get-ChildItem (Join-Path $Src 'skills') -Directory | ForEach-Object {
-    Copy-Item $_.FullName (Join-Path $Target 'skills') -Recurse -Force
-    Write-Output "skill:   $($_.Name)"
-}
-
-Get-ChildItem (Join-Path $Src 'commands') -Filter '*.md' | ForEach-Object {
-    Copy-Item $_.FullName (Join-Path $Target 'commands') -Force
-    Write-Output "command: /$($_.BaseName)"
-}
+& node (Join-Path $Src 'scripts\managed-install.mjs') --target $Target
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Output ""
-Write-Output "Installed to $Target. Scripts stay in this repo - run them by path:"
-Write-Output "  node $Src\scripts\vault-lint\cli.js --vault <vault>"
-Write-Output "  node $Src\scripts\notion-sync\cli.js status --vault <vault>"
+Write-Output "Installed to $Target. Runtime scripts:"
+Write-Output "  node $Target\vaultkit\scripts\vault-lint\cli.js --vault <vault>"
+Write-Output "  node $Target\vaultkit\scripts\notion-sync\cli.js status --vault <vault>"
+Write-Output "Rollback the most recent update with:"
+Write-Output "  node $Target\vaultkit\scripts\managed-install.mjs --target $Target --rollback latest"

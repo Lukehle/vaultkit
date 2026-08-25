@@ -19,6 +19,7 @@ const ledgerLib = require('./ledger');
 //   5. Pull replaces the body and preserves local frontmatter untouched.
 
 function loadConfig(vaultRoot) {
+  vaultRoot = path.resolve(vaultRoot);
   const configPath = path.join(vaultRoot, 'vaultkit.sync.json');
   if (!fs.existsSync(configPath)) {
     throw new Error(`no vaultkit.sync.json in ${vaultRoot} — run: notion-sync init`);
@@ -27,25 +28,72 @@ function loadConfig(vaultRoot) {
   if (!Array.isArray(config.syncRoots) || config.syncRoots.length === 0) {
     throw new Error('vaultkit.sync.json must set syncRoots: at least one folder to mirror');
   }
+  const syncRoots = config.syncRoots.map(validateSyncRoot);
+  const ledgerPath = path.resolve(vaultRoot, config.ledger || '.vaultkit/sync-ledger.json');
+  assertInside(vaultRoot, ledgerPath, 'ledger path');
   return {
     vaultRoot,
-    syncRoots: config.syncRoots,
-    ledgerPath: path.join(vaultRoot, config.ledger || '.vaultkit/sync-ledger.json'),
+    syncRoots,
+    ledgerPath,
     tokenEnv: config.tokenEnv || 'NOTION_TOKEN',
     parentPageId: config.parentPageId || null,
   };
 }
 
-function localBody(vaultRoot, relPath) {
-  const content = fs.readFileSync(path.join(vaultRoot, relPath), 'utf8');
+function validateSyncRoot(root) {
+  if (typeof root !== 'string' || !root.trim()) {
+    throw new Error('each syncRoot must be a non-empty relative folder');
+  }
+  const normalized = root.replace(/\\/g, '/').replace(/\/$/, '');
+  const segments = normalized.split('/');
+  if (path.isAbsolute(root) || normalized === '.' || segments.some((part) => !part || part === '.' || part === '..')) {
+    throw new Error(`unsafe syncRoot ${JSON.stringify(root)}: use a relative folder inside the vault`);
+  }
+  if (segments.some((part) => ['sources', '_drafts'].includes(part.toLowerCase()))) {
+    throw new Error(`unsafe syncRoot ${JSON.stringify(root)}: sources/ and _drafts/ are never syncable`);
+  }
+  return segments.join('/');
+}
+
+function assertInside(root, candidate, label = 'path') {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  if (!relative || (!relative.startsWith('..') && !path.isAbsolute(relative))) return;
+  throw new Error(`${label} escapes the vault: ${candidate}`);
+}
+
+function resolveNote(config, relPath, { requireSyncRoot = true } = {}) {
+  if (typeof relPath !== 'string' || !relPath.trim()) throw new Error('note path is required');
+  const normalized = relPath.replace(/\\/g, '/');
+  const segments = normalized.split('/');
+  if (path.isAbsolute(relPath) || segments.some((part) => !part || part === '.' || part === '..')) {
+    throw new Error(`unsafe note path: ${relPath}`);
+  }
+  if (segments.some((part) => ['sources', '_drafts'].includes(part.toLowerCase()))) {
+    throw new Error(`protected note path is never syncable: ${relPath}`);
+  }
+  const canonical = segments.join('/');
+  if (requireSyncRoot && !config.syncRoots.some((root) => canonical === root || canonical.startsWith(`${root}/`))) {
+    throw new Error(`${canonical} is outside configured syncRoots`);
+  }
+  const absPath = path.resolve(config.vaultRoot, ...segments);
+  assertInside(config.vaultRoot, absPath, 'note path');
+  return { relPath: canonical, absPath };
+}
+
+function localBody(config, relPath) {
+  const { absPath } = resolveNote(config, relPath);
+  const content = fs.readFileSync(absPath, 'utf8');
   return fm.split(content).body;
 }
 
 function listSyncableNotes(config) {
   const found = [];
+  const realVault = fs.realpathSync(config.vaultRoot);
   for (const root of config.syncRoots) {
-    const abs = path.join(config.vaultRoot, root);
+    const abs = path.resolve(config.vaultRoot, ...root.split('/'));
     if (!fs.existsSync(abs)) continue;
+    const realRoot = fs.realpathSync(abs);
+    assertInside(realVault, realRoot, `syncRoot ${root}`);
     walk(abs, (file) => {
       if (file.endsWith('.md')) found.push(path.relative(config.vaultRoot, file).split(path.sep).join('/'));
     });
@@ -56,6 +104,7 @@ function listSyncableNotes(config) {
 function walk(dir, onFile) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
+    if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) {
       if (!entry.name.startsWith('.') && entry.name !== '_sync-conflicts') walk(full, onFile);
     } else {
@@ -90,20 +139,38 @@ async function remoteState(client, entry) {
 async function status(config, client) {
   const ledger = ledgerLib.load(config.ledgerPath);
   const rows = [];
-  for (const relPath of listSyncableNotes(config)) {
+  const syncable = listSyncableNotes(config);
+  const syncableSet = new Set(syncable);
+  for (const relPath of syncable) {
     const entry = ledger.notes[relPath];
     if (!entry || !entry.pageId) {
       rows.push({ relPath, state: 'unlinked' });
       continue;
     }
-    const currentLocalHash = hash(localBody(config.vaultRoot, relPath));
+    const { absPath } = resolveNote(config, relPath);
+    const content = fs.readFileSync(absPath, 'utf8');
+    const currentLocalHash = hash(fm.split(content).body);
+    const frontmatterPageId = fm.get(content, 'notion_page_id');
+    const linkIssue = frontmatterPageId === entry.pageId
+      ? null
+      : `ledger pageId=${entry.pageId}; frontmatter notion_page_id=${frontmatterPageId || '(missing)'}`;
+    if (entry.creationPending) {
+      rows.push({ relPath, state: 'creation-pending', linkIssue });
+      continue;
+    }
     const remote = await remoteState(client, entry);
-    rows.push({ relPath, state: ledgerLib.classify(entry, currentLocalHash, remote.remoteHash) });
+    rows.push({
+      relPath,
+      state: ledgerLib.classify(entry, currentLocalHash, remote.remoteHash),
+      linkIssue,
+    });
   }
   for (const relPath of Object.keys(ledger.notes)) {
-    if (!fs.existsSync(path.join(config.vaultRoot, relPath))) {
-      rows.push({ relPath, state: 'missing-local' });
-    }
+    if (syncableSet.has(relPath)) continue;
+    let resolved;
+    try { resolved = resolveNote(config, relPath, { requireSyncRoot: false }); }
+    catch (error) { rows.push({ relPath, state: 'invalid-ledger-path', linkIssue: error.message }); continue; }
+    rows.push({ relPath, state: fs.existsSync(resolved.absPath) ? 'out-of-scope' : 'missing-local' });
   }
   return rows;
 }
@@ -114,7 +181,7 @@ async function pushNote(config, client, relPath, { force = null } = {}) {
   const entry = ledger.notes[relPath];
   if (!entry || !entry.pageId) throw new Error(`${relPath} is not linked to a Notion page — run: link or push --new`);
 
-  const body = localBody(config.vaultRoot, relPath);
+  const body = localBody(config, relPath);
   const currentLocalHash = hash(body);
   const remote = await remoteState(client, entry);
   const state = ledgerLib.classify(entry, currentLocalHash, remote.remoteHash);
@@ -148,7 +215,7 @@ async function pullNote(config, client, relPath, { force = null } = {}) {
   const entry = ledger.notes[relPath];
   if (!entry || !entry.pageId) throw new Error(`${relPath} is not linked to a Notion page`);
 
-  const absPath = path.join(config.vaultRoot, relPath);
+  const { absPath } = resolveNote(config, relPath);
   const original = fs.readFileSync(absPath, 'utf8');
   const currentLocalHash = hash(fm.split(original).body);
   const remote = await remoteState(client, entry);
@@ -190,22 +257,33 @@ async function pullNote(config, client, relPath, { force = null } = {}) {
 async function createAndLink(config, client, relPath) {
   if (!config.parentPageId) throw new Error('set parentPageId in vaultkit.sync.json to create new pages');
   let ledger = ledgerLib.load(config.ledgerPath);
-  if (ledger.notes[relPath] && ledger.notes[relPath].pageId) {
+  const existing = ledger.notes[relPath];
+  if (existing && existing.pageId && !existing.creationPending) {
     return { relPath, action: 'skip', reason: 'already linked' };
   }
-  const absPath = path.join(config.vaultRoot, relPath);
+  const { absPath } = resolveNote(config, relPath);
   const original = fs.readFileSync(absPath, 'utf8');
   const body = fm.split(original).body;
   const title = path.basename(relPath, '.md');
   const { byName } = idMaps(ledger);
   const { markdown, warnings } = toNotion(body, byName);
 
-  const page = await client.createPage(config.parentPageId, title, markdown);
+  let page = existing && existing.pageId ? { id: existing.pageId } : null;
+  if (!page) {
+    page = await client.createPage(config.parentPageId, title);
+    ledger = ledgerLib.withEntry(ledger, relPath, {
+      pageId: page.id,
+      creationPending: true,
+    });
+    ledgerLib.save(config.ledgerPath, ledger);
+  }
+  await client.patchPageMarkdown(page.id, markdown);
   const readBack = await client.getPageMarkdown(page.id);
   const meta = await client.retrievePage(page.id);
 
   ledger = ledgerLib.withEntry(ledger, relPath, {
     pageId: page.id,
+    creationPending: false,
     lastLocalHash: hash(body),
     lastRemoteHash: hash(readBack),
     lastRemoteEditedTime: meta.last_edited_time,
@@ -232,7 +310,7 @@ async function createAndLink(config, client, relPath) {
 /** Degraded mode: no token. Emit paste-ready Notion markdown for a human to paste. */
 function emitNote(config, relPath, outDir) {
   const ledger = ledgerLib.load(config.ledgerPath);
-  const body = localBody(config.vaultRoot, relPath);
+  const body = localBody(config, relPath);
   const { byName } = idMaps(ledger);
   const { markdown, warnings } = toNotion(body, byName);
   const outPath = path.join(outDir, `${path.basename(relPath, '.md')}.notion.md`);
@@ -242,4 +320,47 @@ function emitNote(config, relPath, outDir) {
   return { relPath, action: 'emitted', outPath, warnings };
 }
 
-module.exports = { loadConfig, listSyncableNotes, status, pushNote, pullNote, createAndLink, emitNote, idMaps };
+/** Report or repair ledger/frontmatter page-link drift. The ledger is authoritative. */
+function reconcileLinks(config, { apply = false, notes = [] } = {}) {
+  const ledger = ledgerLib.load(config.ledgerPath);
+  const wanted = new Set(notes);
+  const results = [];
+  for (const [relPath, entry] of Object.entries(ledger.notes)) {
+    if (!entry.pageId || (wanted.size && !wanted.has(relPath))) continue;
+    let resolved;
+    try { resolved = resolveNote(config, relPath); }
+    catch (error) { results.push({ relPath, action: 'skip', reason: error.message }); continue; }
+    if (!fs.existsSync(resolved.absPath)) {
+      results.push({ relPath, action: 'skip', reason: 'local note missing' });
+      continue;
+    }
+    const original = fs.readFileSync(resolved.absPath, 'utf8');
+    const currentId = fm.get(original, 'notion_page_id');
+    const currentUrl = fm.get(original, 'notion_url');
+    const expectedUrl = notionPageUrl(entry.pageId);
+    if (currentId === entry.pageId && currentUrl === expectedUrl) {
+      results.push({ relPath, action: 'skip', reason: 'link metadata already matches ledger' });
+      continue;
+    }
+    if (apply) {
+      let next = fm.set(original, 'notion_page_id', entry.pageId);
+      next = fm.set(next, 'notion_url', expectedUrl);
+      fs.writeFileSync(resolved.absPath, next, 'utf8');
+    }
+    results.push({ relPath, action: apply ? 'reconciled' : 'would-reconcile' });
+  }
+  return results;
+}
+
+module.exports = {
+  loadConfig,
+  listSyncableNotes,
+  status,
+  pushNote,
+  pullNote,
+  createAndLink,
+  emitNote,
+  reconcileLinks,
+  resolveNote,
+  idMaps,
+};

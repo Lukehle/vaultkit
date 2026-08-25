@@ -13,7 +13,7 @@ schedule instead of at the moment of failure.
 ## Running it
 
 ```
-node scripts/vault-lint/cli.js --vault <vault> [--json] [--stale-days 180] [--max-note-kb 32]
+node ~/.claude/vaultkit/scripts/vault-lint/cli.js --vault <vault> [--json] [--stale-days 180] [--max-note-kb 32]
 ```
 
 Read-only, zero dependencies, exit 1 only on errors. Two severities, deliberately:

@@ -1,6 +1,6 @@
 {
   "name": "vaultkit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run a plain-markdown vault (Obsidian-compatible) as an AI agent's grounding memory: index-first retrieval that cuts token cost, citation discipline that cuts hallucination, a safe two-way Notion mirror, and an approval-gated self-maintenance loop.",
   "author": {
     "name": "Luke Kehle",

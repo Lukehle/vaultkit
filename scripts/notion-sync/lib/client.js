@@ -70,20 +70,15 @@ function createClient({ token, fetchImpl = fetch, sleepImpl = defaultSleep, minI
       request('PATCH', `/v1/pages/${pageId}/markdown`, { markdown }),
 
     /**
-     * Create a child page under a parent page, then set its body.
-     * Two calls by design: the documented POST /v1/pages shape plus the same
-     * markdown PATCH used everywhere else — one body-writing path, not two.
+     * Create an empty child page. The sync engine persists its returned id
+     * before issuing the markdown PATCH so a PATCH/read-back failure can resume
+     * the same page instead of creating a duplicate.
      */
-    createPage: async (parentPageId, title, markdown) => {
-      const page = await request('POST', '/v1/pages', {
+    createPage: (parentPageId, title) =>
+      request('POST', '/v1/pages', {
         parent: { page_id: parentPageId },
         properties: { title: { title: [{ text: { content: title } }] } },
-      });
-      if (markdown) {
-        await request('PATCH', `/v1/pages/${page.id}/markdown`, { markdown });
-      }
-      return page;
-    },
+      }),
   };
 }
 

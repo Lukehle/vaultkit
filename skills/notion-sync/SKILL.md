@@ -10,18 +10,21 @@ notes teammates need to read and occasionally edit. This is not a general bidire
 merge engine, on purpose: narrowing what syncs removes most conflict surface by
 construction instead of resolving it after the fact.
 
-The engine is `scripts/notion-sync/` in this repo — zero dependencies (Node ≥ 18),
-tested, dry-run by default. It uses Notion's native Markdown API (version 2026-03-11),
-so there is no block-JSON conversion layer to corrupt formatting.
+The installed engine is `~/.claude/vaultkit/scripts/notion-sync/` (or the equivalent
+under a custom Claude config root) — zero dependencies (Node ≥ 18), tested, and
+dry-run by default. A repo clone can use its own `scripts/notion-sync/` path. It uses
+Notion's native Markdown API (version 2026-03-11), so there is no block-JSON conversion
+layer to corrupt formatting.
 
 ## Setup, once
 
 1. Create a Notion **internal integration** (token, `ntn_*`), share the target parent
    page with it. Token goes in `.env` as `NOTION_TOKEN` — never in the vault, never in
    the config file.
-2. `node scripts/notion-sync/cli.js init --vault <vault>` → edit `vaultkit.sync.json`:
+2. `node ~/.claude/vaultkit/scripts/notion-sync/cli.js init --vault <vault> --apply`
+   → edit `vaultkit.sync.json`:
    `syncRoots` (which folders mirror — start with one), `parentPageId`.
-3. Existing Notion pages pair with existing notes via `link`. A fresh link deliberately
+3. Existing Notion pages pair with existing notes via `link --apply`. A fresh link deliberately
    reports as a **conflict** until you pick a side once (`resolve --take-local` or
    `--take-remote`) — there is no baseline yet, and guessing one would silently
    overwrite somebody.
@@ -29,7 +32,8 @@ so there is no block-JSON conversion layer to corrupt formatting.
 ## The operating loop
 
 ```
-status   → see per-note state: in-sync | push-pending | pull-pending | conflict | unlinked | missing-local
+status   → see state plus link drift: in-sync | push/pull-pending | conflict | unlinked | creation-pending | out-of-scope | missing-local
+reconcile → dry-run or repair frontmatter page ids from the authoritative ledger
 push     → vault → Notion   (only push-pending; --new creates pages for unlinked notes)
 pull     → Notion → vault   (only pull-pending; replaces body, preserves local frontmatter)
 resolve  → conflicts, one note at a time, explicitly
@@ -67,6 +71,8 @@ stamped as-of. The database stays the live surface; the vault gets an auditable 
 agent writes to, (b) ingests untrusted web content, and (c) syncs outward is the
 textbook exfiltration shape — the "lethal trifecta." Sync only promoted, human-reviewed
 folders; never add `sources/` or `_drafts/` to `syncRoots`.
+The engine enforces that boundary: absolute/traversing roots, `sources/`, `_drafts/`,
+and links outside `syncRoots` fail closed rather than relying on this instruction.
 
 ## Conflicts
 

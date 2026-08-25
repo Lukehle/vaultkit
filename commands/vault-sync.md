@@ -9,9 +9,9 @@ $ARGUMENTS
 Run the **notion-sync** skill for the vault named in the arguments (default: current
 directory).
 
-1. Pre-flight: `node scripts/vault-lint/cli.js --vault <vault>` — a secret error blocks
+1. Pre-flight: `node ~/.claude/vaultkit/scripts/vault-lint/cli.js --vault <vault>` — a secret error blocks
    the sync entirely (rotating comes before syncing).
-2. `node scripts/notion-sync/cli.js status --vault <vault>` and show the per-note table.
+2. `node ~/.claude/vaultkit/scripts/notion-sync/cli.js status --vault <vault>` and show the per-note table.
 3. Push and pull the pending notes: dry-run first, show the plan, then `--apply` on the
    user's confirmation (or without asking if this session was told to run the routine).
 4. Conflicts: never resolve unilaterally. Show both versions' differences per note and

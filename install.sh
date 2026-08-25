@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# vaultkit installer - copies skills and commands into a Claude Code config dir.
-# No network, no package manager. Usage:
+# vaultkit managed installer. Copies skills, commands, and runtime scripts while
+# preserving a hash ledger and rollback point. No network or package manager.
 #   ./install.sh            # installs to ~/.claude
 #   ./install.sh <dir>      # installs to <dir>/.claude (e.g. a project root)
 set -euo pipefail
@@ -8,21 +8,11 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="${1:-$HOME}/.claude"
 
-mkdir -p "$TARGET/skills" "$TARGET/commands"
-
-for skill in "$SRC"/skills/*/; do
-  name="$(basename "$skill")"
-  mkdir -p "$TARGET/skills/$name"
-  cp -r "$skill"/. "$TARGET/skills/$name/"
-  echo "skill:   $name"
-done
-
-for cmd in "$SRC"/commands/*.md; do
-  cp "$cmd" "$TARGET/commands/"
-  echo "command: /$(basename "$cmd" .md)"
-done
+node "$SRC/scripts/managed-install.mjs" --target "$TARGET"
 
 echo
-echo "Installed to $TARGET. Scripts stay in this repo - run them by path:"
-echo "  node $SRC/scripts/vault-lint/cli.js --vault <vault>"
-echo "  node $SRC/scripts/notion-sync/cli.js status --vault <vault>"
+echo "Installed to $TARGET. Runtime scripts:"
+echo "  node $TARGET/vaultkit/scripts/vault-lint/cli.js --vault <vault>"
+echo "  node $TARGET/vaultkit/scripts/notion-sync/cli.js status --vault <vault>"
+echo "Rollback the most recent update with:"
+echo "  node $TARGET/vaultkit/scripts/managed-install.mjs --target $TARGET --rollback latest"
