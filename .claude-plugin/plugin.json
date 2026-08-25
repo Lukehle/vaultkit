@@ -1,0 +1,26 @@
+{
+  "name": "vaultkit",
+  "version": "0.1.0",
+  "description": "Run a plain-markdown vault (Obsidian-compatible) as an AI agent's grounding memory: index-first retrieval that cuts token cost, citation discipline that cuts hallucination, a safe two-way Notion mirror, and an approval-gated self-maintenance loop.",
+  "author": {
+    "name": "Luke Kehle",
+    "url": "https://github.com/Lukehle"
+  },
+  "homepage": "https://github.com/Lukehle/vaultkit",
+  "repository": "https://github.com/Lukehle/vaultkit",
+  "license": "MIT",
+  "keywords": [
+    "obsidian",
+    "markdown",
+    "knowledge-base",
+    "agent-memory",
+    "second-brain",
+    "token-optimization",
+    "hallucination-reduction",
+    "grounding",
+    "notion",
+    "notion-sync",
+    "claude-code",
+    "enterprise"
+  ]
+}

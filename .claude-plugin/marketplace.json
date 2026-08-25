@@ -1,0 +1,20 @@
+{
+  "name": "vaultkit",
+  "owner": {
+    "name": "Luke Kehle",
+    "url": "https://github.com/Lukehle"
+  },
+  "metadata": {
+    "description": "Markdown-vault-as-agent-memory skills for Claude Code: vault structure, tiered retrieval, grounded claims, single-writer zones, health lint, gardening loop, and a tested Notion two-way sync.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "vaultkit",
+      "source": "./",
+      "description": "10 skills plus tested scripts for running a plain-markdown vault as an AI agent's grounding memory: structure and templates, token-tiered retrieval, citation discipline, zone-marked writes, pre-write safety, deterministic health lint, approval-gated self-maintenance, capture-to-wiki flow, compaction-proof checkpoints, and a vault-canonical Notion mirror.",
+      "version": "0.1.0",
+      "category": "productivity"
+    }
+  ]
+}

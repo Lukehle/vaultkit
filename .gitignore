@@ -1,0 +1,17 @@
+# Secrets and local config
+.env
+.env.*
+*.local.json
+
+# Sync state produced by scripts/notion-sync against a real vault
+# (the ledger belongs next to the vault it serves, not in this repo)
+sync-ledger.json
+_sync-conflicts/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS noise
+.DS_Store
+Thumbs.db
